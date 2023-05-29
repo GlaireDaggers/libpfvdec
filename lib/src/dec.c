@@ -104,11 +104,10 @@ void read_plane_coefficients(PFV_Decoder* decoder, PFV_BitStream* bitstream, int
 	int num_blocks = blocks_wide * blocks_high;
 	int num_coeff = num_blocks * 256;
 
-	int16_t block_coeff[256];
-
 	// read coefficients from bitstream
 	for (int i = 0; i < num_blocks; i++)
 	{
+		int16_t* block_coeff = &target[i * 256];
 		memset(block_coeff, 0, sizeof(int16_t) * 256);
 
 		int out_idx = 0;
@@ -124,8 +123,6 @@ void read_plane_coefficients(PFV_Decoder* decoder, PFV_BitStream* bitstream, int
 				block_coeff[out_idx++] = coeff;
 			}
 		}
-
-		memcpy(&target[i * 256], block_coeff, sizeof(int16_t) * 256);
 	}
 }
 
@@ -133,15 +130,15 @@ void read_plane_delta_coefficients(PFV_Decoder* decoder, PFV_BitStream* bitstrea
 	int num_blocks = blocks_wide * blocks_high;
 	int num_coeff = num_blocks * 256;
 
-	int16_t block_coeff[256];
-
 	// read coefficients from bitstream
 	for (int i = 0; i < num_blocks; i++)
 	{
+		int16_t* block_coeff = &target[i * 256];
 		DeltaBlockHeader header = headers[i];
 
+		memset(block_coeff, 0, sizeof(int16_t) * 256);
+
 		if (header.has_coeff) {
-			memset(block_coeff, 0, sizeof(int16_t) * 256);
 
 			int out_idx = 0;
 			while (out_idx < 256) {
@@ -156,11 +153,6 @@ void read_plane_delta_coefficients(PFV_Decoder* decoder, PFV_BitStream* bitstrea
 					block_coeff[out_idx++] = coeff;
 				}
 			}
-
-			memcpy(&target[i * 256], block_coeff, sizeof(int16_t) * 256);
-		}
-		else {
-			memset(&target[i * 256], 0, sizeof(int16_t) * 256);
 		}
 	}
 }
@@ -236,7 +228,6 @@ void decode_plane_dct(int max_threads, int16_t* src, float* qtable, uint8_t* dst
 	#pragma omp parallel for num_threads(max_threads)
 	for (i = 0; i < num_blocks; i++) {
 		float dct_buff[256];
-		memset(dct_buff, 0, sizeof(float) * 256);
 
 		float* dct0 = &dct_buff[0];
 		float* dct1 = &dct_buff[64];
@@ -284,10 +275,7 @@ void decode_plane_delta_dct(int max_threads, int16_t* src, DeltaBlockHeader* hea
 	#pragma omp parallel for num_threads(max_threads)
 	for (i = 0; i < num_blocks; i++) {
 		float dct_buff[256];
-		memset(dct_buff, 0, sizeof(float) * 256);
-
 		uint8_t prev_buff[256];
-		memset(prev_buff, 0, 256);
 
 		float* dct0 = &dct_buff[0];
 		float* dct1 = &dct_buff[64];
