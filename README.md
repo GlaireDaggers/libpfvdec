@@ -1,12 +1,13 @@
 # libpfvdec
 
 A fast & portable C library for decoding [PFV](https://github.com/GlaireDaggers/Pretty-Fast-Video) video streams.
+Written against version 2.0.0 of the PFV codec.
 
 ## Dependencies
 
 libpfvdec depends solely on the C runtime. It can be compiled with OpenMP support, but is not necessary (it will simply fall back to single-threaded mode)
 
-The test executable depends on SDL2.
+The test executable depends on SDL2 (on Windows, use `-DSDL2_PATH` with cmake to set path to your SDL2 development libs)
 
 ## Usage
 
