@@ -72,6 +72,7 @@ struct PFV_Decoder {
 	uint64_t rewind_pos;
 	int max_threads;
 	double accum;
+	int bufferflip;
 };
 
 void read_block_headers(PFV_Decoder* decoder, PFV_BitStream* bitstream, DeltaBlockHeader* headers, int blocks_wide, int blocks_high) {
@@ -370,6 +371,9 @@ void decode_iframe(PFV_Decoder* decoder, uint8_t* payload, size_t payload_len) {
 	copy_plane(decoder->plane_buffer_y, decoder->fb_y, decoder->luma_pad_width, decoder->luma_pad_height, decoder->width, decoder->height);
 	copy_plane(decoder->plane_buffer_u, decoder->fb_u, decoder->chroma_pad_width, decoder->chroma_pad_height, decoder->width / 2, decoder->height / 2);
 	copy_plane(decoder->plane_buffer_v, decoder->fb_v, decoder->chroma_pad_width, decoder->chroma_pad_height, decoder->width / 2, decoder->height / 2);
+
+	// reset bufferflip to read from buffers we just wrote to
+	decoder->bufferflip = false;
 }
 
 void decode_pframe(PFV_Decoder* decoder, uint8_t* payload, size_t payload_len) {
@@ -401,19 +405,26 @@ void decode_pframe(PFV_Decoder* decoder, uint8_t* payload, size_t payload_len) {
 	read_plane_delta_coefficients(decoder, &bitstream, decoder->header_buffer_u, decoder->coeff_buffer_u, decoder->chroma_blocks_wide, decoder->chroma_blocks_high);
 	read_plane_delta_coefficients(decoder, &bitstream, decoder->header_buffer_v, decoder->coeff_buffer_v, decoder->chroma_blocks_wide, decoder->chroma_blocks_high);
 
-	// decode into YUV
-	decode_plane_delta_dct(decoder->max_threads, decoder->coeff_buffer_y, decoder->header_buffer_y, decoder->qtables[qtable_y], decoder->plane_buffer_y, decoder->plane_buffer_y2, decoder->luma_blocks_wide, decoder->luma_blocks_high);
-	decode_plane_delta_dct(decoder->max_threads, decoder->coeff_buffer_u, decoder->header_buffer_u, decoder->qtables[qtable_u], decoder->plane_buffer_u, decoder->plane_buffer_u2, decoder->chroma_blocks_wide, decoder->chroma_blocks_high);
-	decode_plane_delta_dct(decoder->max_threads, decoder->coeff_buffer_v, decoder->header_buffer_v, decoder->qtables[qtable_v], decoder->plane_buffer_v, decoder->plane_buffer_v2, decoder->chroma_blocks_wide, decoder->chroma_blocks_high);
+	// avoid a memcpy step by bouncing back and forth between two buffers on each p-frame
+	uint8_t* buf_src_y = decoder->bufferflip ? decoder->plane_buffer_y2 : decoder->plane_buffer_y;
+	uint8_t* buf_src_u = decoder->bufferflip ? decoder->plane_buffer_u2 : decoder->plane_buffer_u;
+	uint8_t* buf_src_v = decoder->bufferflip ? decoder->plane_buffer_v2 : decoder->plane_buffer_v;
 
-	memcpy(decoder->plane_buffer_y, decoder->plane_buffer_y2, decoder->luma_blocks_wide * decoder->luma_blocks_high * 256);
-	memcpy(decoder->plane_buffer_u, decoder->plane_buffer_u2, decoder->chroma_blocks_wide * decoder->chroma_blocks_high * 256);
-	memcpy(decoder->plane_buffer_v, decoder->plane_buffer_v2, decoder->chroma_blocks_wide * decoder->chroma_blocks_high * 256);
+	uint8_t* buf_dst_y = decoder->bufferflip ? decoder->plane_buffer_y : decoder->plane_buffer_y2;
+	uint8_t* buf_dst_u = decoder->bufferflip ? decoder->plane_buffer_u : decoder->plane_buffer_u2;
+	uint8_t* buf_dst_v = decoder->bufferflip ? decoder->plane_buffer_v : decoder->plane_buffer_v2;
+
+	// decode into YUV
+	decode_plane_delta_dct(decoder->max_threads, decoder->coeff_buffer_y, decoder->header_buffer_y, decoder->qtables[qtable_y], buf_src_y, buf_dst_y, decoder->luma_blocks_wide, decoder->luma_blocks_high);
+	decode_plane_delta_dct(decoder->max_threads, decoder->coeff_buffer_u, decoder->header_buffer_u, decoder->qtables[qtable_u], buf_src_u, buf_dst_u, decoder->chroma_blocks_wide, decoder->chroma_blocks_high);
+	decode_plane_delta_dct(decoder->max_threads, decoder->coeff_buffer_v, decoder->header_buffer_v, decoder->qtables[qtable_v], buf_src_v, buf_dst_v, decoder->chroma_blocks_wide, decoder->chroma_blocks_high);
 
 	// copy into FB
-	copy_plane(decoder->plane_buffer_y, decoder->fb_y, decoder->luma_pad_width, decoder->luma_pad_height, decoder->width, decoder->height);
-	copy_plane(decoder->plane_buffer_u, decoder->fb_u, decoder->chroma_pad_width, decoder->chroma_pad_height, decoder->width / 2, decoder->height / 2);
-	copy_plane(decoder->plane_buffer_v, decoder->fb_v, decoder->chroma_pad_width, decoder->chroma_pad_height, decoder->width / 2, decoder->height / 2);
+	copy_plane(buf_dst_y, decoder->fb_y, decoder->luma_pad_width, decoder->luma_pad_height, decoder->width, decoder->height);
+	copy_plane(buf_dst_u, decoder->fb_u, decoder->chroma_pad_width, decoder->chroma_pad_height, decoder->width / 2, decoder->height / 2);
+	copy_plane(buf_dst_v, decoder->fb_v, decoder->chroma_pad_width, decoder->chroma_pad_height, decoder->width / 2, decoder->height / 2);
+
+	decoder->bufferflip = !decoder->bufferflip;
 }
 
 void read_payload(PFV_Decoder* decoder, size_t payload_len) {
@@ -517,6 +528,7 @@ PFV_Decoder* pfv_decoder_new(PFV_Stream* stream, int max_threads) {
 	decoder->rewind_pos = stream->tell_fn(stream->context);
 	decoder->max_threads = max_threads;
 	decoder->accum = 0.0;
+	decoder->bufferflip = 0;
 
 	RTASSERT(decoder->coeff_buffer_y != NULL);
 	RTASSERT(decoder->coeff_buffer_u != NULL);
