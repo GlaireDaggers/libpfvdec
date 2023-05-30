@@ -77,8 +77,16 @@ int main() {
 
 		clock_t start = clock();
 
+		uint64_t prev_time = SDL_GetPerformanceCounter();
+
+		double sum = 0.0;
+
 		int frame_count = 0;
 		while (pfv_decoder_next_frame(decoder)) {
+			uint64_t cur_time = SDL_GetPerformanceCounter();
+			sum += (double)(cur_time - prev_time) / SDL_GetPerformanceFrequency();
+			prev_time = cur_time;
+
 			frame_count++;
 		}
 
@@ -87,6 +95,7 @@ int main() {
 		double duration = ((end - start) / (double)CLOCKS_PER_SEC) * 1000.0;
 
 		printf("Decoded %d frames in %d ms\n", frame_count, (int)duration);
+		printf("Avg time per frame: %f ms\n", (sum / frame_count) * 1000.0);
 	}
 #else
 	// init SDL2
