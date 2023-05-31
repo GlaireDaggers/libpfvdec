@@ -380,6 +380,21 @@ void decode_iframe(PFV_Decoder* decoder, uint8_t* payload, size_t payload_len) {
 
 #ifdef USE_OPENCL
 	if (decoder->opencl_ctx != NULL) {
+		cl_event ev_read_y, ev_read_u, ev_read_v;
+
+		// copy prev results back into our buffers
+		OCL_ENSURE(clEnqueueReadBuffer(decoder->opencl_queue, decoder->opencl_plane_buffer_y, false, 0, decoder->luma_pad_width * decoder->luma_pad_height,
+			decoder->plane_buffer_y, 0, NULL, &ev_read_y));
+
+		OCL_ENSURE(clEnqueueReadBuffer(decoder->opencl_queue, decoder->opencl_plane_buffer_u, false, 0, decoder->chroma_pad_width * decoder->chroma_pad_height,
+			decoder->plane_buffer_u, 0, NULL, &ev_read_u));
+
+		OCL_ENSURE(clEnqueueReadBuffer(decoder->opencl_queue, decoder->opencl_plane_buffer_v, false, 0, decoder->chroma_pad_width * decoder->chroma_pad_height,
+			decoder->plane_buffer_v, 0, NULL, &ev_read_v));
+
+		cl_event ev[3] = { ev_read_y, ev_read_u, ev_read_v };
+		clWaitForEvents(3, ev);
+
 		// upload coefficients to GPU buffers
 		cl_event ev_copy_y, ev_copy_u, ev_copy_v;
 		cl_event ev_kernel_y, ev_kernel_u, ev_kernel_v;
@@ -430,20 +445,17 @@ void decode_iframe(PFV_Decoder* decoder, uint8_t* payload, size_t payload_len) {
 
 		OCL_ENSURE(clEnqueueNDRangeKernel(decoder->opencl_queue, decoder->opencl_kernel_idct, 2, NULL, dim_chroma, local_dim, 1, &ev_copy_v, &ev_kernel_v));
 
-		cl_event ev_read_y, ev_read_u, ev_read_v;
+		OCL_ENSURE(clReleaseEvent(ev_read_y));
+		OCL_ENSURE(clReleaseEvent(ev_read_u));
+		OCL_ENSURE(clReleaseEvent(ev_read_v));
 
-		// copy prev results back into our buffers
-		OCL_ENSURE(clEnqueueReadBuffer(decoder->opencl_queue, decoder->opencl_plane_buffer_y, false, 0, decoder->luma_pad_width * decoder->luma_pad_height,
-			decoder->plane_buffer_y, 0, NULL, &ev_read_y));
+		OCL_ENSURE(clReleaseEvent(ev_copy_y));
+		OCL_ENSURE(clReleaseEvent(ev_copy_u));
+		OCL_ENSURE(clReleaseEvent(ev_copy_v));
 
-		OCL_ENSURE(clEnqueueReadBuffer(decoder->opencl_queue, decoder->opencl_plane_buffer_u, false, 0, decoder->chroma_pad_width * decoder->chroma_pad_height,
-			decoder->plane_buffer_u, 0, NULL, &ev_read_u));
-
-		OCL_ENSURE(clEnqueueReadBuffer(decoder->opencl_queue, decoder->opencl_plane_buffer_v, false, 0, decoder->chroma_pad_width * decoder->chroma_pad_height,
-			decoder->plane_buffer_v, 0, NULL, &ev_read_v));
-
-		cl_event ev[3] = { ev_read_y, ev_read_u, ev_read_v };
-		clWaitForEvents(3, ev);
+		OCL_ENSURE(clReleaseEvent(ev_kernel_y));
+		OCL_ENSURE(clReleaseEvent(ev_kernel_u));
+		OCL_ENSURE(clReleaseEvent(ev_kernel_v));
 	}
 	else {
 #else
@@ -516,6 +528,21 @@ void decode_pframe(PFV_Decoder* decoder, uint8_t* payload, size_t payload_len) {
 		cl_event ev_copy_y, ev_copy_u, ev_copy_v;
 		cl_event ev_kernel_y, ev_kernel_u, ev_kernel_v;
 		cl_event ev_mvec_y, ev_mvec_u, ev_mvec_v;
+
+		cl_event ev_read_y, ev_read_u, ev_read_v;
+
+		// copy prev results back into our buffers
+		OCL_ENSURE(clEnqueueReadBuffer(decoder->opencl_queue, gpu_buf_dst_y, false, 0, decoder->luma_pad_width * decoder->luma_pad_height,
+			buf_dst_y, 0, NULL, &ev_read_y));
+
+		OCL_ENSURE(clEnqueueReadBuffer(decoder->opencl_queue, gpu_buf_dst_u, false, 0, decoder->chroma_pad_width * decoder->chroma_pad_height,
+			buf_dst_u, 0, NULL, &ev_read_u));
+
+		OCL_ENSURE(clEnqueueReadBuffer(decoder->opencl_queue, gpu_buf_dst_v, false, 0, decoder->chroma_pad_width * decoder->chroma_pad_height,
+			buf_dst_v, 0, NULL, &ev_read_v));
+
+		cl_event ev[3] = { ev_read_y, ev_read_u, ev_read_v };
+		clWaitForEvents(3, ev);
 
 		// upload coefficients to GPU buffers
 		RTASSERT(clEnqueueWriteBuffer(decoder->opencl_queue, decoder->opencl_coeff_buffer_y, false, 0, decoder->luma_blocks_wide * decoder->luma_blocks_high * 256 * sizeof(int16_t),
@@ -599,20 +626,21 @@ void decode_pframe(PFV_Decoder* decoder, uint8_t* payload, size_t payload_len) {
 
 		OCL_ENSURE(clEnqueueNDRangeKernel(decoder->opencl_queue, decoder->opencl_kernel_idct_delta, 2, NULL, dim_chroma, local_dim, 1, &ev_mvec_v, &ev_kernel_v));
 
-		cl_event ev_read_y, ev_read_u, ev_read_v;
+		OCL_ENSURE(clReleaseEvent(ev_read_y));
+		OCL_ENSURE(clReleaseEvent(ev_read_u));
+		OCL_ENSURE(clReleaseEvent(ev_read_v));
 
-		// copy prev results back into our buffers
-		OCL_ENSURE(clEnqueueReadBuffer(decoder->opencl_queue, gpu_buf_dst_y, false, 0, decoder->luma_pad_width * decoder->luma_pad_height,
-			buf_dst_y, 0, NULL, &ev_read_y));
+		OCL_ENSURE(clReleaseEvent(ev_copy_y));
+		OCL_ENSURE(clReleaseEvent(ev_copy_u));
+		OCL_ENSURE(clReleaseEvent(ev_copy_v));
 
-		OCL_ENSURE(clEnqueueReadBuffer(decoder->opencl_queue, gpu_buf_dst_u, false, 0, decoder->chroma_pad_width * decoder->chroma_pad_height,
-			buf_dst_u, 0, NULL, &ev_read_u));
+		OCL_ENSURE(clReleaseEvent(ev_kernel_y));
+		OCL_ENSURE(clReleaseEvent(ev_kernel_u));
+		OCL_ENSURE(clReleaseEvent(ev_kernel_v));
 
-		OCL_ENSURE(clEnqueueReadBuffer(decoder->opencl_queue, gpu_buf_dst_v, false, 0, decoder->chroma_pad_width * decoder->chroma_pad_height,
-			buf_dst_v, 0, NULL, &ev_read_v));
-
-		cl_event ev[3] = { ev_read_y, ev_read_u, ev_read_v };
-		clWaitForEvents(3, ev);
+		OCL_ENSURE(clReleaseEvent(ev_mvec_y));
+		OCL_ENSURE(clReleaseEvent(ev_mvec_u));
+		OCL_ENSURE(clReleaseEvent(ev_mvec_v));
 	}
 	else {
 #else
