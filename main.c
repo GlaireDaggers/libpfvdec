@@ -40,12 +40,17 @@ PFV_Stream open_stream(const char* filename) {
 	return stream;
 }
 
+int decoded_frame = false;
+int framecount = 0;
+
 void onvideo(void* userdata, uint8_t* fb_y, uint8_t* fb_u, uint8_t* fb_v) {
 	SDL_Texture* tex = (SDL_Texture*)userdata;
 	uint32_t format;
 	int access, width, height;
 	SDL_QueryTexture(tex, &format, &access, &width, &height);
 	SDL_UpdateYUVTexture((SDL_Texture*)userdata, NULL, fb_y, width, fb_u, width / 2, fb_v, width / 2);
+	decoded_frame = true;
+	framecount++;
 }
 
 int main() {
@@ -77,8 +82,16 @@ int main() {
 
 		clock_t start = clock();
 
+		uint64_t prev_time = SDL_GetPerformanceCounter();
+
+		double sum = 0.0;
+
 		int frame_count = 0;
 		while (pfv_decoder_next_frame(decoder)) {
+			uint64_t cur_time = SDL_GetPerformanceCounter();
+			sum += (double)(cur_time - prev_time) / SDL_GetPerformanceFrequency();
+			prev_time = cur_time;
+
 			frame_count++;
 		}
 
@@ -87,6 +100,7 @@ int main() {
 		double duration = ((end - start) / (double)CLOCKS_PER_SEC) * 1000.0;
 
 		printf("Decoded %d frames in %d ms\n", frame_count, (int)duration);
+		printf("Avg time per frame: %f ms\n", (sum / frame_count) * 1000.0);
 	}
 #else
 	// init SDL2
@@ -118,6 +132,8 @@ int main() {
 
 	uint64_t prev_time = SDL_GetPerformanceCounter();
 
+	double frame_timer_sum = 0.0;
+
 	uint8_t window_open = true;
 	while (window_open) {
 		SDL_Event e;
@@ -133,8 +149,24 @@ int main() {
 		uint64_t delta = cur_time - prev_time;
 		double dt = (double)delta / SDL_GetPerformanceFrequency();
 
+		uint64_t frame_start = SDL_GetPerformanceCounter();
+		decoded_frame = false;
+
 		if (!pfv_decoder_advance_delta(decoder, dt, onvideo, vid_texture)) {
 			pfv_decoder_reset(decoder);
+		}
+
+		uint64_t frame_end = SDL_GetPerformanceCounter();
+
+		if (decoded_frame) {
+			double fd = (double)(frame_end - frame_start) / SDL_GetPerformanceFrequency();
+			frame_timer_sum += fd;
+
+			if (framecount == 60) {
+				printf("Avg decoding time: %f ms\n", (frame_timer_sum * 1000.0) / framecount);
+				framecount = 0;
+				frame_timer_sum = 0.0;
+			}
 		}
 
 		prev_time = cur_time;

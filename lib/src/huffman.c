@@ -84,6 +84,7 @@ void pfv_init_huffman_from_table(PFV_HuffmanTree* tree, uint8_t* table) {
 
 	size_t p_count = 0;
 
+
 	for (int i = 0; i < 16; i++) {
 		if (table[i] > 0) {
 			// insertion sort new node
@@ -97,6 +98,12 @@ void pfv_init_huffman_from_table(PFV_HuffmanTree* tree, uint8_t* table) {
 			int index = get_insert_index(&node, p, p_count);
 			insert_node_at(node, p, &p_count, index);
 		}
+	}
+
+	// tree has no codes, just exit
+	if (p_count == 0) {
+		memset(tree, 0, sizeof(PFV_HuffmanTree));
+		return;
 	}
 
 	while (p_count > 1) {
@@ -117,7 +124,7 @@ void pfv_init_huffman_from_table(PFV_HuffmanTree* tree, uint8_t* table) {
 		insert_node_at(c, p, &p_count, index);
 	}
 
-	assert(p_count == 1);
+	RTASSERT(p_count > 0);
 
 	tree->tree_root = p[0];
 

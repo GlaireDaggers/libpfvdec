@@ -1,7 +1,7 @@
 # libpfvdec
 
 A fast & portable C library for decoding [PFV](https://github.com/GlaireDaggers/Pretty-Fast-Video) video streams.
-Written against version 2.0.0 of the PFV codec.
+Written against version 2.0.1 of the PFV codec.
 
 ## Dependencies
 
