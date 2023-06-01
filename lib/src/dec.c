@@ -48,7 +48,7 @@ struct PFV_Decoder {
 	uint16_t height;
 	uint16_t framerate;
 	uint8_t eof;
-	float(*qtables)[64];
+	int32_t(*qtables)[64];
 	uint16_t num_qtables;
 	uint8_t* packet_buffer;
 	size_t packet_buffer_len;
@@ -185,34 +185,34 @@ void read_plane_delta_coefficients(PFV_Decoder* decoder, PFV_BitStream* bitstrea
 	}
 }
 
-void blit_subblock(float* src, uint8_t* dst, int dst_w, int dst_h, int dx, int dy) {
+void blit_subblock(int32_t* src, uint8_t* dst, int dst_w, int dst_h, int dx, int dy) {
 	for (int row = 0; row < 8; row++) {
 		int dest_row = row + dy;
 		int src_offset = row * 8;
 		int dst_offset = (dest_row * dst_w) + dx;
 
 		for (int column = 0; column < 8; column++) {
-			float f = src[src_offset + column] +128.0;
+			int32_t f = (src[src_offset + column] >> FP_BITS) + 128;
 
-			if (f < 0.0) f = 0.0;
-			else if (f > 255.0) f = 255.0;
+			if (f < 0) f = 0;
+			else if (f > 255) f = 255;
 
 			dst[dst_offset + column] = (uint8_t)f;
 		}
 	}
 }
 
-void blit_subblock_delta(float* src, uint8_t* prev, uint8_t* dst, int dst_w, int dst_h, int dx, int dy) {
+void blit_subblock_delta(int32_t* src, uint8_t* prev, uint8_t* dst, int dst_w, int dst_h, int dx, int dy) {
 	for (int row = 0; row < 8; row++) {
 		int dest_row = row + dy;
 		int src_offset = row * 8;
 		int dst_offset = (dest_row * dst_w) + dx;
 
 		for (int column = 0; column < 8; column++) {
-			float f = (float)prev[src_offset + column] + (src[src_offset + column] * 2.f);
+			int32_t f = (int32_t)prev[src_offset + column] + (src[src_offset + column] >> FP_BITS << 1);
 
-			if (f < 0.0) f = 0.0;
-			else if (f > 255.0) f = 255.0;
+			if (f < 0) f = 0;
+			else if (f > 255) f = 255;
 
 			dst[dst_offset + column] = (uint8_t)f;
 		}
@@ -245,7 +245,7 @@ void get_subblock(uint8_t* src, int src_w, int src_h, int sx, int sy, uint8_t* d
 	}
 }
 
-void decode_plane_dct(int max_threads, int16_t* src, float* qtable, uint8_t* dst, size_t blocks_wide, size_t blocks_high) {
+void decode_plane_dct(int max_threads, int16_t* src, int32_t* qtable, uint8_t* dst, size_t blocks_wide, size_t blocks_high) {
 	int num_blocks = blocks_wide * blocks_high;
 
 	int dst_width = blocks_wide * 16;
@@ -255,12 +255,12 @@ void decode_plane_dct(int max_threads, int16_t* src, float* qtable, uint8_t* dst
 
 	#pragma omp parallel for num_threads(max_threads)
 	for (i = 0; i < num_blocks; i++) {
-		float dct_buff[256];
+		int32_t dct_buff[256];
 
-		float* dct0 = &dct_buff[0];
-		float* dct1 = &dct_buff[64];
-		float* dct2 = &dct_buff[128];
-		float* dct3 = &dct_buff[192];
+		int32_t* dct0 = &dct_buff[0];
+		int32_t* dct1 = &dct_buff[64];
+		int32_t* dct2 = &dct_buff[128];
+		int32_t* dct3 = &dct_buff[192];
 
 		int block_offset = i * 256;
 
@@ -292,7 +292,7 @@ void copy_plane(uint8_t* src, uint8_t* dst, size_t src_width, size_t src_height,
 	}
 }
 
-void decode_plane_delta_dct(int max_threads, int16_t* src, DeltaBlockHeader* headers, float* qtable, uint8_t* prev, uint8_t* dst, size_t blocks_wide, size_t blocks_high) {
+void decode_plane_delta_dct(int max_threads, int16_t* src, DeltaBlockHeader* headers, int32_t* qtable, uint8_t* prev, uint8_t* dst, size_t blocks_wide, size_t blocks_high) {
 	int num_blocks = blocks_wide * blocks_high;
 
 	int dst_width = blocks_wide * 16;
@@ -302,13 +302,13 @@ void decode_plane_delta_dct(int max_threads, int16_t* src, DeltaBlockHeader* hea
 
 	#pragma omp parallel for num_threads(max_threads)
 	for (i = 0; i < num_blocks; i++) {
-		float dct_buff[256];
+		int32_t dct_buff[256];
 		uint8_t prev_buff[256];
 
-		float* dct0 = &dct_buff[0];
-		float* dct1 = &dct_buff[64];
-		float* dct2 = &dct_buff[128];
-		float* dct3 = &dct_buff[192];
+		int32_t* dct0 = &dct_buff[0];
+		int32_t* dct1 = &dct_buff[64];
+		int32_t* dct2 = &dct_buff[128];
+		int32_t* dct3 = &dct_buff[192];
 
 		uint8_t* prev0 = &prev_buff[0];
 		uint8_t* prev1 = &prev_buff[64];
@@ -738,7 +738,7 @@ PFV_Decoder* pfv_decoder_new(PFV_Stream* stream, int max_threads) {
 	uint32_t version;
 	READ_U32(version, stream);
 
-	if (version != 200) {
+	if (version != 201) {
 		printf("Invalid PFV version\n");
 		return NULL;
 	}
@@ -750,7 +750,7 @@ PFV_Decoder* pfv_decoder_new(PFV_Stream* stream, int max_threads) {
 	READ_U16(framerate, stream);
 	READ_U16(num_qtable, stream);
 
-	float(*qtables)[64] = malloc(sizeof(*qtables) * num_qtable);
+	int(*qtables)[64] = malloc(sizeof(*qtables) * num_qtable);
 
 	if (qtables == NULL) {
 		return NULL;
@@ -763,7 +763,7 @@ PFV_Decoder* pfv_decoder_new(PFV_Stream* stream, int max_threads) {
 		{
 			uint16_t q;
 			READ_U16(q, stream);
-			qtables[i][x] = (float)q;
+			qtables[i][x] = (int)q;
 		}
 	}
 
@@ -912,12 +912,12 @@ PFV_Decoder* pfv_decoder_new(PFV_Stream* stream, int max_threads) {
 			RTASSERT(decoder->opencl_plane_buffer_v2 != NULL);
 
 			// create qtable buffer & copy qtables into it
-			decoder->opencl_qtable_buffer = clCreateBuffer(decoder->opencl_ctx, CL_MEM_READ_ONLY, sizeof(float) * decoder->num_qtables * 64, NULL, NULL);
+			decoder->opencl_qtable_buffer = clCreateBuffer(decoder->opencl_ctx, CL_MEM_READ_ONLY, sizeof(int32_t) * decoder->num_qtables * 64, NULL, NULL);
 			RTASSERT(decoder->opencl_qtable_buffer != NULL);
 
 			for (int i = 0; i < decoder->num_qtables; i++) {
-				OCL_ENSURE(clEnqueueWriteBuffer(decoder->opencl_queue, decoder->opencl_qtable_buffer, true, i * sizeof(float) * 64,
-					sizeof(float) * 64, decoder->qtables[i], 0, NULL, NULL));
+				OCL_ENSURE(clEnqueueWriteBuffer(decoder->opencl_queue, decoder->opencl_qtable_buffer, true, i * sizeof(int32_t) * 64,
+					sizeof(int32_t) * 64, decoder->qtables[i], 0, NULL, NULL));
 			}
 
 			// allocate mvec buffers
