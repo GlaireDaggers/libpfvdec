@@ -42,6 +42,17 @@ typedef struct DeltaBlockHeader {
         stream->read_fn(&into, 1, 1, stream->context); \
     }
 
+static int32_t DCT_SCALE_FACTORS[64] = {
+	32, 37, 34, 26, 32, 26, 34, 37,
+	37, 43, 39, 31, 37, 31, 39, 43,
+	34, 39, 35, 28, 34, 28, 35, 39,
+	26, 31, 28, 22, 26, 22, 28, 31,
+	32, 37, 34, 26, 32, 26, 34, 37,
+	26, 31, 28, 22, 26, 22, 28, 31,
+	34, 39, 35, 28, 34, 28, 35, 39,
+	37, 43, 39, 31, 37, 31, 39, 43,
+};
+
 struct PFV_Decoder {
 	PFV_Stream* stream;
 	uint16_t width;
@@ -209,7 +220,7 @@ void blit_subblock_delta(int32_t* src, uint8_t* prev, uint8_t* dst, int dst_w, i
 		int dst_offset = (dest_row * dst_w) + dx;
 
 		for (int column = 0; column < 8; column++) {
-			int32_t f = (int32_t)prev[src_offset + column] + (src[src_offset + column] >> FP_BITS << 1);
+			int32_t f = (int32_t)prev[src_offset + column] + (src[src_offset + column] >> FP_BITS);
 
 			if (f < 0) f = 0;
 			else if (f > 255) f = 255;
@@ -738,7 +749,7 @@ PFV_Decoder* pfv_decoder_new(PFV_Stream* stream, int max_threads) {
 	uint32_t version;
 	READ_U32(version, stream);
 
-	if (version != 201) {
+	if (version != 210) {
 		printf("Invalid PFV version\n");
 		return NULL;
 	}
@@ -750,20 +761,23 @@ PFV_Decoder* pfv_decoder_new(PFV_Stream* stream, int max_threads) {
 	READ_U16(framerate, stream);
 	READ_U16(num_qtable, stream);
 
-	int(*qtables)[64] = malloc(sizeof(*qtables) * num_qtable);
+	int32_t(*qtables)[64] = malloc(sizeof(*qtables) * num_qtable);
 
 	if (qtables == NULL) {
 		return NULL;
 	}
 
 	// read q-tables
+	// note that we roll the dct scale factors directly into our qtables here so we can do dequantization + scaling in a single step
+	// as an added bonus our scale factors are 24.8 fixed point, so it will also perform the 24.8 fp conversion while we're at it
+
 	for (int i = 0; i < num_qtable; i++)
 	{
 		for (int x = 0; x < 64; x++)
 		{
 			uint16_t q;
 			READ_U16(q, stream);
-			qtables[i][x] = (int)q;
+			qtables[i][x] = (int32_t)q * DCT_SCALE_FACTORS[x];
 		}
 	}
 
