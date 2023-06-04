@@ -220,7 +220,7 @@ void blit_subblock_delta(int32_t* src, uint8_t* prev, uint8_t* dst, int dst_w, i
 		int dst_offset = (dest_row * dst_w) + dx;
 
 		for (int column = 0; column < 8; column++) {
-			int32_t f = (int32_t)prev[src_offset + column] + (src[src_offset + column] >> FP_BITS);
+			int32_t f = (int32_t)prev[src_offset + column] + ((src[src_offset + column] >> FP_BITS) * 2);
 
 			if (f < 0) f = 0;
 			else if (f > 255) f = 255;
@@ -749,7 +749,7 @@ PFV_Decoder* pfv_decoder_new(PFV_Stream* stream, int max_threads) {
 	uint32_t version;
 	READ_U32(version, stream);
 
-	if (version != 210) {
+	if (version != 211) {
 		printf("Invalid PFV version\n");
 		return NULL;
 	}
