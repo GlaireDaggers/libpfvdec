@@ -56,7 +56,7 @@ void onvideo(void* userdata, uint8_t* fb_y, uint8_t* fb_u, uint8_t* fb_v) {
 int main() {
 	// open PFV file
 
-	PFV_Stream stream = open_stream("sonic_unleashed.pfv");
+	PFV_Stream stream = open_stream("balcony2.pfv");
 
 	if (stream.context == NULL) {
 		printf("Failed opening input file\n");
